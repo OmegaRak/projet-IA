@@ -1,0 +1,5 @@
+.git
+notebooks
+data
+**/__pycache__
+api/tests
