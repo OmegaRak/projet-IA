@@ -187,6 +187,7 @@ def faire_eda(df: pd.DataFrame, dossier: Path):
     ax.set_title("Corrélations entre variables numériques")
     sauver(fig, dossier / "correlations.png")
 
+
 # --------------------------------------------------------------------------- #
 # Programme principal
 # --------------------------------------------------------------------------- #
@@ -322,6 +323,9 @@ def main():
         joblib.dump(encoders, args.models_dir / "encoders.pkl")
         joblib.dump(list(X_train.columns), args.models_dir / "features.pkl")
         print(f"Modèle, encoders et features sauvegardés dans {args.models_dir}")
+        # Envoi dans MLflow sous leurs noms d'origine (le dossier local disparaît en CI)
+        for nom in ("model_retard.pkl", "encoders.pkl", "features.pkl"):
+            mlflow.log_artifact(str(args.models_dir / nom), artifact_path="models")
 
         # --- Modèle + préprocessing dans MLflow ---
         # save_model + log_artifacts (plutôt que log_model) : compatible avec le serveur MLflow de DagsHub.
