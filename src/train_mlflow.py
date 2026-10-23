@@ -187,7 +187,6 @@ def faire_eda(df: pd.DataFrame, dossier: Path):
     ax.set_title("Corrélations entre variables numériques")
     sauver(fig, dossier / "correlations.png")
 
-
 # --------------------------------------------------------------------------- #
 # Programme principal
 # --------------------------------------------------------------------------- #
