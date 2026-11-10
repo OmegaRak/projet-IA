@@ -1,3 +1,4 @@
+
 name: CI/CD
 
 on:
@@ -7,15 +8,14 @@ on:
   pull_request:
     branches: [main]
 
-# Annule l'exécution précédente si on repousse sur la même branche
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ---------- CI : tests de l'API ----------
   test:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -25,36 +25,65 @@ jobs:
           cache: pip
           cache-dependency-path: requirements*.txt
 
-      - name: Installer les dépendances
-        run: pip install -r requirements-dev.txt
+      - name: Installer les dependances
+        run: |
+          pip install -r requirements-dev.txt
+          pip install "dvc[http]==3.67.1"
+
+      - name: Configurer les acces DagsHub
+        env:
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          dvc remote modify --local origin auth basic
+          dvc remote modify --local origin user "$DAGSHUB_USERNAME"
+          dvc remote modify --local origin password "$DAGSHUB_TOKEN"
+
+      - name: Recuperer les donnees et modeles
+        run: dvc pull data/Livraisons.csv.dvc models.dvc
 
       - name: Lancer les tests
         run: pytest -v
 
-  # ---------- CD : image Docker testée puis publiée sur ghcr.io ----------
   docker:
     needs: test
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       packages: write
+
     steps:
       - uses: actions/checkout@v4
 
+      - name: Installer DVC
+        run: pip install "dvc[http]==3.67.1"
+
+      - name: Configurer les acces DagsHub
+        env:
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          dvc remote modify --local origin auth basic
+          dvc remote modify --local origin user "$DAGSHUB_USERNAME"
+          dvc remote modify --local origin password "$DAGSHUB_TOKEN"
+
+      - name: Recuperer le modele
+        run: dvc pull models.dvc
+
       - uses: docker/setup-buildx-action@v3
 
-      - name: Noms et tags de l'image
+      - name: Definir les tags de l'image
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/omegarak/projet-ia
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha
             type=ref,event=tag
 
-      # 1) Construire l'image en local pour la tester
-      - name: Build (local)
+      - name: Construire l'image Docker
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -64,22 +93,22 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 2) Démarrer le conteneur et vérifier qu'il répond
-      - name: Smoke test du conteneur
+      - name: Tester le conteneur
         run: |
           docker run -d --name api -p 8000:8000 api-retards:test
           for i in $(seq 1 30); do
             if curl -sf http://localhost:8000/health; then
-              echo; echo "API OK"; exit 0
+              echo
+              echo "API OK"
+              exit 0
             fi
             sleep 2
           done
-          echo "L'API n'a pas démarré :"
+          echo "L'API n'a pas demarre :"
           docker logs api
           exit 1
 
-      # 3) Publier (uniquement sur main et sur les tags, jamais sur une pull request)
-      - name: Connexion à ghcr.io
+      - name: Connexion a GHCR
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
@@ -87,7 +116,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publier l'image
+      - name: Publier l'image Docker
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v6
         with:
